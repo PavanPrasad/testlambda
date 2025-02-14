@@ -9,10 +9,10 @@ on:
       - prod
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  API_GW_ARN: "arn:aws:execute-api:us-east-1:094116700812:91l7n6grok"  # Corrected API Gateway ARN
+  AWS_REGION: ${{ secrets.AWS_REGION }}  # Set this in your GitHub Secrets
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}  # Set this in your GitHub Secrets
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # Set this in your GitHub Secrets
+  API_GW_ARN: arn:aws:execute-api:us-east-1:094116700812:91l7n6grok  # Corrected API Gateway ARN
   DEV_API_NAME: "DevHelloAPI"
   QA_API_NAME: "QaHelloAPI"
   PROD_API_NAME: "ProdHelloAPI"
@@ -22,22 +22,26 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [dev, qa, prod]
+        environment: [dev, qa, prod]  # Environments for deployment
 
     steps:
+      # Step 1: Checkout the code
       - name: Checkout code
         uses: actions/checkout@v2
 
+      # Step 2: Set up Python environment
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.x'
 
+      # Step 3: Install necessary dependencies
       - name: Install dependencies
         run: |
           pip install awscli
           pip install boto3
 
+      # Step 4: Check if AWS CLI is already installed and install if necessary
       - name: Check if AWS CLI is already installed
         run: |
           if ! command -v aws &> /dev/null; then
@@ -49,14 +53,19 @@ jobs:
             echo "AWS CLI already installed, skipping installation."
           fi
 
+      # Step 5: Deploy Lambda Function
       - name: Deploy Lambda Function
         run: |
+          # Create a zip file of the Lambda function code
           zip function.zip lambda/lambda_function.py
-          aws lambda update-function-code --function-name "HelloWorldFunction-${{ matrix.environment }}" --zip-file fileb://function.zip --region ${{ env.AWS_REGION }}
+          
+          # Update the Lambda function code based on the environment
+          aws lambda update-function-code --function-name "HelloWorldFunction" --zip-file fileb://function.zip --region ${{ env.AWS_REGION }}
 
-      - name: Update API Gateway
+      # Step 6: Update API Gateway Integration
+      - name: Update API Gateway Integration
         run: |
-          # Extracting the stage name from the environment (dev, qa, or prod)
+          # Extract the environment stage from the matrix
           STAGE="${{ matrix.environment }}"
           
           # Update API Gateway to use the latest Lambda function ARN
@@ -66,19 +75,28 @@ jobs:
             --http-method GET \
             --type AWS_PROXY \
             --integration-http-method POST \
-            --uri arn:aws:apigateway:${{ env.AWS_REGION }}:lambda:path/2015-03-31/functions/arn:aws:lambda:${{ env.AWS_REGION }}:094116700812:function:HelloWorldFunction-${{ matrix.environment }}:invocations \
+            --uri arn:aws:apigateway:${{ env.AWS_REGION }}:lambda:path/2015-03-31/functions/arn:aws:lambda:${{ env.AWS_REGION }}:094116700812:function:HelloWorldFunction:invocations \
             --region ${{ env.AWS_REGION }}
 
-          # Deploy API Gateway to the specified stage (dev, qa, or prod)
+      # Step 7: Deploy API Gateway to the specified stage (dev, qa, or prod)
+      - name: Deploy API Gateway
+        run: |
           aws apigateway create-deployment \
             --rest-api-id 91l7n6grok \
             --stage-name $STAGE \
             --region ${{ env.AWS_REGION }}
 
+      # Step 8: Add Lambda permissions to API Gateway
       - name: Add Lambda Permissions to API Gateway
         run: |
-          aws lambda add-permission --function-name HelloWorldFunction-${{ matrix.environment }} --principal apigateway.amazonaws.com --statement-id "API-Gateway-Permission-${{ matrix.environment }}" --action "lambda:InvokeFunction" --region ${{ env.AWS_REGION }}
+          aws lambda add-permission \
+            --function-name HelloWorldFunction \
+            --principal apigateway.amazonaws.com \
+            --statement-id "API-Gateway-Permission-${{ matrix.environment }}" \
+            --action "lambda:InvokeFunction" \
+            --region ${{ env.AWS_REGION }}
 
+      # Step 9: Output the API Gateway URL
       - name: Output API Gateway URL
         run: |
           API_URL="https://91l7n6grok.execute-api.${{ env.AWS_REGION }}.amazonaws.com/${{ matrix.environment }}/hello"
